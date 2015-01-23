@@ -1,17 +1,54 @@
+/*
+State(\KIT).doInit();
+State(\KIT).doStart();
+*/
 
 State(\KIT).clear();
-
 State(\KIT).initActions.add({
-	~distBuffer = Buffer.alloc(s, 4092)
+	~distBuffer = Buffer.alloc(s, 4092);
 	~distBuffer.cheby([3.1, 0, 1.6, -1, 1,], asWavetable:true);
 	~distBuffer.cheby([3.1, 0, 1.6], asWavetable:true);
 	~resources.add(~distBuffer);
 
+	~resources.add(~lc = LCDevice());
+
+	// SoundFile.use("/Users/fsc/Documents/_sounds/distortion-modelling/curve-2.wav", {
+	// 	|file|
+	// 	var r = FloatArray.fill(file.numFrames, 0);
+	// 	file.readData(r);
+	// 	r = r.neg;
+	// });
+
+	DistCurve(\box,
+		{ |x| (x * 1).tanh * 0.8 },
+		{ |x| (x * 5).tanh * 0.8 },
+		{ |x| (x * 20).tanh * 0.8 }
+	);
+
 	~controls = (
+		// Ndef(\mbdist).objects[0].synthDef.allControlNames.do({ |c| ("\\" ++ "%:\t\tCV(ControlSpec(default: %))".format(c.name, c.defaultValue)).postln });
 		\kit: (
-			\
+			\panSpeed:			CV(ControlSpec(	-0.5,	0.5, 	default: 0.1, units: "hz")),
+			\feedCutoff:		CV(ControlSpec(	200, 	6000, 	default: 1250)),
+			\feedThreshold:		CV(ControlSpec(	0.01, 	0.2, 	default: 0.1)),
+			\trig2F:			CV(ControlSpec(	-4, 	4, 		default: -4)),
+			\trigF:				CV(ControlSpec(	-4, 	4, 		default: 2)),
+			\comb1F:			CV(ControlSpec(	-4, 	2, 		default: -2)),
+			\comb2F:			CV(ControlSpec(	-4, 	2, 		default: -3)),
+			\attackTime:		CV(ControlSpec(	0.01, 	6, 		warp:4, default: 0.1)),
+			\decayTime:			CV(ControlSpec(	0.01, 	6, 		default: 1)),
+			\boost:				CV(ControlSpec(	0.5, 	25, 	default: 5)),
+			\sweepBW:			CV(ControlSpec(	5, 		100, 	default: 50)),
+			\bandsAmp:			CV(ControlSpec(	0, 		1, 		default: 0.15)),
+			\impulseAmp:		CV(ControlSpec(	0, 		1, 		warp: 4, default: 1)),
+			\thumpAmp:			CV(ControlSpec(	0, 		1, 		warp: 4, default: 1)),
+			\buzzAmp:			CV(ControlSpec(	0, 		1, 		warp: 4, default: 1)),
 		)
-	)
+	);
+
+	~lc.knobRows[3][0].cv = ~controls.kit.feedCutoff;
+	~lc.knobRows[3][1].cv = ~controls.kit.bandsAmp;
+	~lc.knobRows[3][2].cv = ~controls.kit.boost;
 });
 
 State(\KIT).startActions.add({
@@ -27,8 +64,6 @@ State(\KIT).startActions.add({
 		notes 		= ((30 + 12 + [	0, 	0.001, 	7, 		12	]).midicps * SinOsc.kr(LFNoise2.kr(3, 5, 5.2), 0, 0.5, 1.5).round)
 		++ (30 + 24 + [	0, 	7, 		20,	 	12  ]).midicps
 	});
-
-	s.sync();
 
 	~distFunc = {
 		|sig, boost = 10, splitFuncs|
@@ -76,7 +111,7 @@ State(\KIT).startActions.add({
 
 
 		////////////// PLUCK
-		notes 		= Ndef(\mbdistNotes).kr();
+		notes 		= Ndef(\mbdistNotes).kr(8);
 		sig			= Pluck.ar(feed.neg + LPF.ar({ Dust.ar(50) }, 900), trig, 0.4, notes.reciprocal, 0.7, 0.1);
 		sig			= (sig * 0.5) + Pluck.ar(sig.sum, trig2, 0.4, notes.reciprocal, 40, 0.4);
 		sig			= (sig * 0.5) + RLPF.ar(sig, notes * 2, 200 / notes);
@@ -84,7 +119,7 @@ State(\KIT).startActions.add({
 		sig.assertChannels(notes.size);
 
 		////////////// DISTORTION
-		sig 		= notes.sum {
+		sig 		= Mix(notes.collect {
 			|f, i|
 			var bandSig, width, amp;
 			bandSig 	= (LeakDC.ar(sig[i])
@@ -108,72 +143,51 @@ State(\KIT).startActions.add({
 				})
 			);
 
-			bandSig		= Shapesdar.ar(~distBuffer.bufnum, bandSig) * 10;
+			bandSig		= Shaper.ar(~distBuffer.bufnum, bandSig) * 10;
 			bandSig		= Compander.ar(bandSig, bandSig * 6, 0.5, 1, 1 / 10);
 			bandSig		= \bandsAmp.kr(0.15) * LPF.ar(bandSig, 15000);
-		};
+		});
 		sig.assertChannels(2);
 
 		////////////// PERC
 		impulse		= (LPF.ar(Decay2.ar(Impulse.ar(1, 0), 0.001, 0.4), 300, 1)).tanh;
 
 		thumpTrig 	= Decay2.ar((Impulse.ar(2) * WhiteNoise.ar.abs) > 0.5, 0.1, 0.4);
-		thump		= SinOsc.ar(thumpTrig.linlin(0, 1, 10, TRand.ar(80, 60, sTrig)), sTrig, sTrig * 24).tanh;
+		thump		= SinOsc.ar(thumpTrig.linlin(0, 1, 10, TRand.ar(80, 60, thumpTrig)), thumpTrig, thumpTrig * 24).tanh;
 
 		buzz		= { BBandPass.ar((WhiteNoise.ar * trig.min(1)) > 0.999, 20, 0.1, 14000).fold(-0.5, 0.5).tanh } ! 2;
 
-		sig			= sig + sum(
+		sig			= sig + sum([
 			(\impulseAmp.kr(1, 0.5) * impulse),
 			(\thumpAmp.kr(1, 0.5) * thump),
 			(\buzzAmp.kr(1, 0.5) * buzz),
-		);
+		]);
 
 		LocalOut.ar(sig);
-		sig			= Compander.ar(sig, sig, 0.5, 1 / 8, 1 / 45, 0.001, 0.1);
+		sig			= Compander.ar(sig, sig, 0.5, 1/8, 1/45, 0.001, 0.1);
 	});
 
 	Ndef(\mbdist).setControls(
-		// ...
+		~controls.kit.asKeyValuePairs()
 	);
+
+	Ndef(\mbdist).play();
+	~lc.connect();
+
+	AudioCaptureView(\kit).front;
 });
 
 State(\KIT).stopActions.add({
-
+	Ndef(\mbdist).end();
+	Ndef(\mbdistNotes).end();
+	~lc.disconnect();
+	if (AudioCaptureView(\kit).recording.not) {
+		AudioCaptureView(\kit).hide();
+	};
 });
 
 State(\KIT).freeActions.add({
-
+	// ...
 });
 
 
-(
-)
-
-(
-
-
-);
-Ndef(\mbdist).play
-Ndef(\mbdist).fadeTime = 4;
-
-~lc = LCDevice();
-~lc.connect();
-
-~lc.knobRows[3][0].cv.action_({
-	|cv|
-	Ndef(\mbdist).set(\feedCutoff, cv.value);
-});
-~lc.knobRows[3][1].cv.action_({
-	|cv|
-	Ndef(\mbdist).set(\bandsAmp, cv.value);
-});
-~lc.knobRows[3][2].cv.action_({
-	|cv|
-	Ndef(\mbdist).set(\boost, cv.value);
-});
-
-~lc.knobRows[3][0].cv.spec_(ControlSpec(100, 8000, default:1250));
-~lc.knobRows[3][1].cv.spec_(ControlSpec(0.0, 1, warp: 4, default:0.15));
-~lc.knobRows[3][2].cv.spec_(ControlSpec(0.1, 15, warp: 1, default:5));
-
-AudioCaptureView(\kit).front;
