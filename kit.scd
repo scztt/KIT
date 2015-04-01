@@ -3,6 +3,7 @@ State(\KIT).doInit();
 State(\KIT).doStart();
 */
 
+State(\KIT).push();
 State(\KIT).clear();
 State(\KIT).initActions.add({
 	~distBuffer = Buffer.alloc(s, 4092);
@@ -49,6 +50,21 @@ State(\KIT).initActions.add({
 	~lc.knobRows[3][0].cv = ~controls.kit.feedCutoff;
 	~lc.knobRows[3][1].cv = ~controls.kit.bandsAmp;
 	~lc.knobRows[3][2].cv = ~controls.kit.boost;
+
+	~lc.knobRows[2][0].cv = ~controls.kit.bandsAmp;
+	~lc.knobRows[2][1].cv = ~controls.kit.impulseAmp;
+	~lc.knobRows[2][2].cv = ~controls.kit.thumpAmp;
+	~lc.knobRows[2][3].cv = ~controls.kit.buzzAmp;
+
+	~lc.knobRows[1][0].cv = ~controls.kit.feedCutoff;
+	~lc.knobRows[1][1].cv = ~controls.kit.feedThreshold;
+	~lc.knobRows[1][2].cv = ~controls.kit.attackTime;
+	~lc.knobRows[1][3].cv = ~controls.kit.decayTime;
+
+	~lc.knobRows[0][0].cv = ~controls.kit.attackTime;
+	~lc.knobRows[0][1].cv = ~controls.kit.decayTime;
+
+
 });
 
 State(\KIT).startActions.add({
@@ -61,8 +77,8 @@ State(\KIT).startActions.add({
 		notes		= ([25, 50, 50, 50] * 2 * SinOsc.kr(LFNoise2.kr(3, 0.2, 0.2), 0, 1.5, 2.0).round)
 		++ ([50, 75, 50 * 2, 50] * 8 * 1 / 4);
 
-		notes 		= ((30 + 12 + [	0, 	0.001, 	7, 		12	]).midicps * SinOsc.kr(LFNoise2.kr(3, 5, 5.2), 0, 0.5, 1.5).round)
-		++ (30 + 24 + [	0, 	7, 		20,	 	12  ]).midicps
+		notes 		= ((30 + 24 + [	0, 	0.001, 	7 + 12, 12 + 12	]).midicps * SinOsc.kr(LFNoise2.kr(3, 5, 5.2), 0, 0.5, 1.5).round)
+					++ (30 + 24 + [	0, 	3, 		20,	 	12  ]).midicps
 	});
 
 	~distFunc = {
@@ -150,12 +166,12 @@ State(\KIT).startActions.add({
 		sig.assertChannels(2);
 
 		////////////// PERC
-		impulse		= (LPF.ar(Decay2.ar(Impulse.ar(1, 0), 0.001, 0.4), 300, 1)).tanh;
+		impulse		= (LPF.ar(Decay2.ar(Impulse.ar(1, 0), 0.2, 0.4), 300, 1)).tanh;
 
-		thumpTrig 	= Decay2.ar((Impulse.ar(2) * WhiteNoise.ar.abs) > 0.5, 0.1, 0.4);
-		thump		= SinOsc.ar(thumpTrig.linlin(0, 1, 10, TRand.ar(80, 60, thumpTrig)), thumpTrig, thumpTrig * 24).tanh;
+		thumpTrig 	= Decay2.ar((trig * WhiteNoise.ar.abs) > 0.5, 0.05, 0.4);
+		thump		= SinOsc.ar(thumpTrig.linlin(0, 1, 10, TRand.ar(180, 60, thumpTrig)), thumpTrig, thumpTrig * 24);
 
-		buzz		= { BBandPass.ar((WhiteNoise.ar * trig.min(1)) > 0.999, 20, 0.1, 14000).fold(-0.5, 0.5).tanh } ! 2;
+		buzz		= { BBandPass.ar((WhiteNoise.ar * trig.min(1)) > 0.5, 20, 0.1, 14000).fold(-0.5, 0.5).tanh } ! 2;
 
 		sig			= sig + sum([
 			(\impulseAmp.kr(1, 0.5) * impulse),
@@ -164,7 +180,7 @@ State(\KIT).startActions.add({
 		]);
 
 		LocalOut.ar(sig);
-		sig			= Compander.ar(sig, sig, 0.5, 1/8, 1/45, 0.001, 0.1);
+		sig			= Compander.ar(sig, sig, 0.5, 1, 1/55, 0.001, 0.1);
 	});
 
 	Ndef(\mbdist).setControls(
